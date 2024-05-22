@@ -52,8 +52,8 @@ int main() {
     // Create philosopher threads
     #pragma omp parallel
     {
-        int philosopher = omp_get_thread_num();
-        philosopher(philosopher);
+        int philosopherIdentifier = omp_get_thread_num();
+        philosopher(philosopherIdentifier);
     }
 
     // Destroy the locks
