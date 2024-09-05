@@ -12,17 +12,15 @@ int num_cortes;
 int cadeiras_ocupadas = 0;
 int cortes_realizados = 0;
 bool barbearia_aberta = true;
-bool barbeiro_ativo = true; // Flag para controle do barbeiro
 
-void *barbeiro_func(void *arg) {
+void barbeiro_func() {
     while (barbearia_aberta || cadeiras_ocupadas > 0) {
         bool need_to_sleep = false;
 
 #pragma omp critical
         {
             if (cortes_realizados >= num_cortes && cadeiras_ocupadas == 0) {
-                barbearia_aberta = false;
-                barbeiro_ativo = false; // Finaliza o barbeiro
+                barbearia_aberta = false; // Fecha a barbearia se todos os cortes forem feitos
             }
 
             if (cadeiras_ocupadas > 0) {
@@ -32,7 +30,7 @@ void *barbeiro_func(void *arg) {
                 printf("Barbeiro terminou o corte\n");
                 cortes_realizados++;
             } else {
-                need_to_sleep = true;
+                need_to_sleep = true;  // Barbeiro deve esperar se não houver clientes
             }
         }
 
@@ -43,12 +41,9 @@ void *barbeiro_func(void *arg) {
     }
 
     printf("Barbeiro foi para casa\n");
-    return NULL;
 }
 
-void *cliente_func(void *arg) {
-    int id = *(int*)arg;
-
+void cliente_func(int id) {
     while (true) {
         bool atendido = false;
 
@@ -65,10 +60,14 @@ void *cliente_func(void *arg) {
             printf("Cliente %d está tendo o cabelo cortado\n", id);
             sleep(rand() % 3 + 1);  // Simula o tempo de corte
             printf("Cliente %d terminou o corte\n", id);
-            return NULL;
+            return;  // O cliente foi atendido e sai da função
         } else {
             printf("Cliente %d foi embora (barbearia cheia ou fechada)\n", id);
-            sleep(1);  // Espera um pouco antes de tentar novamente
+            sleep(1);  // Espera antes de tentar novamente
+        }
+
+        if (!barbearia_aberta) {
+            break;  // Sai do loop se a barbearia estiver fechada
         }
     }
 }
@@ -88,34 +87,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    omp_set_num_threads(2);  // Define o número de threads OpenMP
-
+    // Iniciamos as threads usando OpenMP
 #pragma omp parallel sections
     {
+        // Seção do barbeiro
 #pragma omp section
         {
-            barbeiro_func(NULL);
+            barbeiro_func();
         }
 
+        // Seção dos clientes
 #pragma omp section
         {
-            int ids[num_clientes];
 #pragma omp parallel for
             for (int i = 0; i < num_clientes; i++) {
-                ids[i] = i;
-                cliente_func(&ids[i]);
+                cliente_func(i + 1);
                 sleep(rand() % 2);  // Intervalo aleatório entre chegadas de clientes
             }
         }
-    }
-
-    // Espera o barbeiro finalizar o trabalho
-    while (barbeiro_ativo) {
-        sleep(1);
     }
 
     printf("Total de cortes realizados: %d\n", cortes_realizados);
 
     return 0;
 }
-
