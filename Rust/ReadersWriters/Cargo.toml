@@ -1,0 +1,8 @@
+[package]
+name = "ReadersWriters"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.10.0"
+rand = "0.9.0-alpha.2"
