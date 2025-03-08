@@ -1,0 +1,229 @@
+// CODE FROM https://dev.to/natnaelhailu/the-cigarette-smokers-problem-74i
+
+#define _DEFAULT_SOURCE
+
+#include <semaphore.h>  // sem_t, sem_wait(), sem_post(), sem_init()
+#include <pthread.h>    // pthread_t, pthread_create(), pthread_join()
+#include <stdbool.h>    // bool, true, false
+#include <stdlib.h>     // atoi(), rand(), srand(), exit()
+#include <string.h>     // strcmp()
+#include <unistd.h>     // usleep()
+#include <stdio.h>      // printf()
+#include <time.h>       // time()
+
+// Global Variables
+
+sem_t table;        //< place where agent produces its ingredients
+sem_t agent;        //< entity with unlimited ingredients
+sem_t smoker[3];    //< cigarette smokers 1, 2 and 3
+int smokeCount[3];  //< max number of smokes that cause cancer
+
+// Function definations
+
+/// ---------------------------------------------------------------------------
+/// Checks if a smoker is alive or dead.
+///
+/// @param id The smoker identifier.
+///
+/// @returns 'true' if smoker[id] is alive; else 'false'.
+/// ---------------------------------------------------------------------------
+bool is_alive(int id)
+{
+    return (smokeCount[id] == 0) ? false : true;
+}
+
+/// ---------------------------------------------------------------------------
+/// Generates a random number based on scenarios determined by the
+/// number of living & dead smokers.
+///
+/// @returns ret_val The random number generated
+/// ---------------------------------------------------------------------------
+int rand_num()
+{
+    int ret_val;    //< function return value
+
+    // all smokers are alive
+    if(is_alive(0) && is_alive(1) && is_alive(2)) {
+        ret_val = rand() % 3;
+    }
+
+    // smoker[0] is dead; others are alive
+    else if(!is_alive(0) && is_alive(1) && is_alive(2)) {
+        ret_val = (rand() % 2) + 1;
+    }
+
+    // smoker[1] is dead; others are alive
+    else if(!is_alive(1) && is_alive(0) && is_alive(2)) {
+        ret_val = (((rand() % 2) + 1) == 1) ? 0 : 2;
+    }
+
+    // smoker[2] is dead; others are alive
+    else if(!is_alive(2) && is_alive(0) && is_alive(1)) {
+        ret_val = rand() % 2;
+    }
+
+    // if all smokers are dead
+    else if(!is_alive(0) && !is_alive(1) && !is_alive(2)) {
+        ret_val = -1;
+    }
+
+    // if only one smoker is alive
+    else {
+        for(int i = 0; i < 3; i++) {
+            if(is_alive(i)) {
+                ret_val = i;
+            }
+        }
+    }
+
+    return ret_val;
+}
+
+/// ---------------------------------------------------------------------------
+/// Generates a pair of ingredients needed by living smokers. Resources are
+/// represented as:
+///     0 => tobacco & paper
+///     1 => matches & paper
+///     2 => matches & tobacco
+///
+/// @param *arg A pointer argument to any type.
+/// ---------------------------------------------------------------------------
+void *agentThdFunc(void *arg)
+{
+    int randNum;    //< pair-of-ingredients identifier
+
+    while(true) {
+        sem_wait(&table);   // close access to table
+
+        // choose two ingredients to produce
+        randNum = rand_num();
+
+        // if all smokers are dead, quit production
+        if( randNum == -1) {
+            break;
+        }
+
+        // put chosen ingredients on the table
+        switch(randNum) {
+        case 0:
+            printf("Agent produced tobacco and paper\n");
+            break;
+        case 1:
+            printf("Agent produced matches and paper\n");
+            break;
+        case 2:
+            printf("Agent produced matches and tobacco\n");
+            break;
+        }
+
+        sem_post(&table);           // allow table access
+        sem_post(&smoker[randNum]); // signal smoker[randNum]
+        sem_wait(&agent);           // wait for table to be cleared
+    }
+
+    pthread_exit(NULL); // terminate thread
+}
+
+/// ---------------------------------------------------------------------------
+/// Simulates smoker behavior using resources provided by the agent.
+///     smoker[0] - has matches; needs tobacco and paper
+///     smoker[1] - has tobacco; needs matches and paper
+///     smoker[2] - has paper; needs matches and tobacco
+///
+/// @param *arg A pointer argument to any type.
+/// ---------------------------------------------------------------------------
+void *smokerThdFunc(void *arg)
+{
+    int smkr_id = *(int*)arg;
+    printf("Smoker %d starts...\n", smkr_id);   // starting message
+
+    while(is_alive(smkr_id))
+    {
+        sem_wait(&smoker[smkr_id]); // wait for ingredient
+        sem_wait(&table);           // block table access
+        usleep(rand() % 1500000);   // smoke for a while; clear table
+
+        switch(smkr_id) {
+        case 0: // red
+            printf("\033[0;31mSmoker %d completed smoking\033[0m\n", smkr_id);
+            break;
+        case 1: // green
+            printf("\033[0;32mSmoker %d completed smoking\033[0m\n", smkr_id);
+            break;
+        case 2: // blue
+            printf("\033[0;34mSmoker %d completed smoking\033[0m\n", smkr_id);
+            break;
+        }
+
+        smokeCount[smkr_id]--;  // update current smoker's smoke count
+        sem_post(&table);       // allow table access
+        sem_post(&agent);       // notify agent that table is cleared
+    }
+
+    printf("Smoker %d dies of cancer.\n", smkr_id);
+    free(arg);          // deallocate dynamic memory
+    pthread_exit(NULL); // terminate thread
+}
+
+/// -----------------------------------------------------------------------
+/// Main entry point for this program.
+///
+/// @return Exit-code for the process - 0 for success, else an error code.
+/// -----------------------------------------------------------------------
+int main(int argc, char **argv)
+{
+    srand(time(0));         //< use current time as seed for rand()
+    char str[3] = "-s";     //< required cmd line option
+    pthread_t smokerThd[3]; //< threads for smoker operations
+    pthread_t agentThd;     //< thread for agent operation
+
+    // validate command line arguments
+    if (argc != 3) {
+        printf("Error, unexpected number of arguments\n");
+        exit(1);
+    }
+
+    if(strcmp(argv[1], str) != 0) {
+        printf("Error, invalid argument/s\n");
+        exit(1);
+    }
+
+    if((atoi(argv[2]) < 3) || (atoi(argv[2]) > 10)) {
+        printf("Error, invalid smoke count\n");
+        exit(1);
+    }
+
+    // Initialize global variables
+    sem_init(&table, 0, 1);
+    sem_init(&agent, 0, 0);
+    for(int i=0; i<3; i++) {
+        sem_init(&smoker[i], 0, 0);
+        smokeCount[i] = atoi(argv[2]);
+    }
+
+    // Spawn threads
+    pthread_create(&agentThd, NULL, &agentThdFunc, NULL);
+    for(int i=0; i<3; i++) {
+        int *smkr_id_ptr = (int*)malloc(sizeof(int));
+
+        *smkr_id_ptr = i;
+        pthread_create(&smokerThd[i], NULL, &smokerThdFunc, smkr_id_ptr);
+    }
+
+    // Join threads
+    pthread_join(agentThd, NULL);
+    for(int i=0; i<3; i++) {
+        pthread_join(smokerThd[i], NULL);
+    }
+
+    // Destroy all semaphores
+    sem_destroy(&table);
+    sem_destroy(&agent);
+    for(int i=0; i<3; i++) {
+        sem_destroy(&smoker[i]);
+    }
+
+    exit(0);    // Exit program
+}
+
+/* EOF */
