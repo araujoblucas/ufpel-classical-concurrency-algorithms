@@ -1,0 +1,153 @@
+// CODE FROM https://andersonaiziro.blogspot.com/2009/05/problema-do-produtor-consumidor.html
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+
+
+//define os lados de leitura e escrita dos pipes...
+#define READ 0
+#define WRITE 1
+
+//define a quantidade de produtos produzidos pelos produtores e a quantidade de pacotes que um pipe suporta
+#define MAX_PROD_PACKS  100
+#define MAX_PIPE_PACKS  30
+
+//define a quantidade de produtores e de consumidores
+#define PRODUCERS   2
+#define CONSUMERS   2
+
+
+//definimos uma estrutura para os produtos a serem produzidos, armazenando o id do pai
+typedef struct prod prod;
+
+struct prod{int prodid; pid_t producerid;};
+
+int fd[2];
+
+int n;
+
+//Prototipos...
+void consume_prod(prod*);
+prod produce_prod(int);
+
+
+void producer()
+{
+int qtdade;
+prod newprod;
+
+close(fd[READ]); // Fecha o lado de leitura. Lado nao utilizado
+
+for(qtdade=0;qtdade<MAX_PROD_PACKS;qtdade++){
+
+   newprod = produce_prod(qtdade);               //produz novo item
+        printf("Novo item produzido pelo processo %d! \n", getpid());
+
+   write(fd[WRITE],&newprod,sizeof(prod)); // insere novo item no pipe    
+    }
+
+close (fd[WRITE]); // Fecha o lado utilizado
+}
+
+void consumer()
+{
+
+int qtdade;
+int resp;
+prod consumeprod;
+close (fd[WRITE]); /* Fecha o lado de leitura que nao eh utilizado*/
+
+while( 1 ){
+
+   resp = read(fd[READ],&consumeprod,sizeof(prod));
+   if(resp==-1){        
+       printf("Erro na leitura do pipe\n");
+   }
+
+   else if(resp==0){
+       printf("Pipe estah vazio... \n");
+   }
+   else{
+
+       consume_prod(&consumeprod);
+   }
+}
+close (fd[READ]); /* Fecha o lado utilizado*/
+
+}
+
+prod produce_prod(int n){
+prod newprod;
+int timetoproduce;
+
+timetoproduce = rand()%7;
+newprod.prodid = n;
+
+newprod.producerid = getpid();
+printf("Processo %d produzindo um novo produto\n",getpid());
+
+sleep(timetoproduce);
+return newprod;
+}
+
+void consume_prod(prod * t){
+
+int timetoconsume;
+timetoconsume=rand()%5;
+printf("Processo %d consumindo produto %d do Produtor %d\n",getpid(),t->prodid,t->producerid);
+
+sleep(timetoconsume);
+}
+
+void new_producer(){
+int newprocess;
+
+newprocess = fork();
+if(newprocess==-1){
+   printf("Erro na criacao do processo produtor\n");
+}
+
+else if(newprocess==0){
+   producer();
+   exit(0);
+}
+
+return;
+}
+void new_consumer(){
+int newprocess;
+newprocess = fork();
+
+if(newprocess==-1){
+   printf("Erro na criacao do processo consumidor\n");
+}
+else{
+
+   consumer();
+   exit(0);
+}
+
+}
+
+int main(){
+
+pipe(fd); //cria o pipe
+
+int i;
+
+/* Criação de Processos Produtores */
+for( i=0;i<PRODUCERS;i++){
+
+   new_producer(); 
+}
+/* Criação de Processos consumidores */
+for(i=0;i<CONSUMERS;i++){
+
+   new_consumer();
+}
+//o processo pai será um processo consumidor
+  
+exit(0);
+}
