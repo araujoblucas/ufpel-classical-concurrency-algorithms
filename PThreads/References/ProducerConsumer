@@ -1,153 +1,114 @@
-// CODE FROM https://andersonaiziro.blogspot.com/2009/05/problema-do-produtor-consumidor.html
+// CODE FROM https://gist.github.com/jonatasnona/5371859
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
+#include <pthread.h>
 
-
-//define os lados de leitura e escrita dos pipes...
-#define READ 0
-#define WRITE 1
-
-//define a quantidade de produtos produzidos pelos produtores e a quantidade de pacotes que um pipe suporta
-#define MAX_PROD_PACKS  100
-#define MAX_PIPE_PACKS  30
-
-//define a quantidade de produtores e de consumidores
-#define PRODUCERS   2
-#define CONSUMERS   2
+#define  FALSE 0
+#define  TRUE  1
 
 
-//definimos uma estrutura para os produtos a serem produzidos, armazenando o id do pai
-typedef struct prod prod;
+// Declaracao das variaveis de condicao:
+pthread_mutex_t  mutex;
 
-struct prod{int prodid; pid_t producerid;};
-
-int fd[2];
-
-int n;
-
-//Prototipos...
-void consume_prod(prod*);
-prod produce_prod(int);
+//Buffer
+#define  BUFFERVAZIO 0
+#define  BUFFERCHEIO 1
+int buffer;
+int estado = BUFFERVAZIO;
 
 
-void producer()
-{
-int qtdade;
-prod newprod;
+void produtor(int id)
+        {
+	int i=0;
+	int item;
+        int aguardar;
 
-close(fd[READ]); // Fecha o lado de leitura. Lado nao utilizado
+	printf("Inicio produtor %d \n",id);
+	while (i < 10)
+	    {
+            //produzir item
+	    item = i + (id*1000);
 
-for(qtdade=0;qtdade<MAX_PROD_PACKS;qtdade++){
+            do
+	        {
+                pthread_mutex_lock(&mutex);
+	        aguardar = FALSE;
+	        if (estado == BUFFERCHEIO)
+		    {
+		    aguardar = TRUE;
+	            pthread_mutex_unlock(&mutex);
+		    }
+		} while (aguardar == TRUE);
 
-   newprod = produce_prod(qtdade);               //produz novo item
-        printf("Novo item produzido pelo processo %d! \n", getpid());
+	    //inserir item
+            printf("Produtor %d inserindo item %d\n", id, item); 
+            buffer = item;
+	    estado = BUFFERCHEIO;
+	    
+	    pthread_mutex_unlock(&mutex);
+	    i++;
+	    sleep(2);
+	    }
+	printf("Produtor %d terminado \n", id); 
+        }
 
-   write(fd[WRITE],&newprod,sizeof(prod)); // insere novo item no pipe    
-    }
+void consumidor(int id)
+        {
+	int item;
+	int aguardar;
 
-close (fd[WRITE]); // Fecha o lado utilizado
-}
+	printf("Inicio consumidor %d \n",id);
+	while (1)
+	    {
+            // retirar item da fila
+            do
+		{
+                pthread_mutex_lock(&mutex);
+	        aguardar = FALSE;
+	        if (estado == BUFFERVAZIO)
+		    {
+	            aguardar = TRUE;
+		    pthread_mutex_unlock(&mutex);
+		    }
+	        } while (aguardar == TRUE);
+	    item = buffer;
+	    estado = BUFFERVAZIO;
+	    pthread_mutex_unlock(&mutex);
 
-void consumer()
-{
+	    // processar item
+            printf("Consumidor %d consumiu item %d\n", id, item); 
 
-int qtdade;
-int resp;
-prod consumeprod;
-close (fd[WRITE]); /* Fecha o lado de leitura que nao eh utilizado*/
+ 	    sleep(2);
+	    }
+	printf("Consumidor %d terminado \n", id); 
+        }
 
-while( 1 ){
+int main()
+{ 
+	pthread_t prod1;
+	pthread_t prod2;
+	pthread_t prod3;
+	pthread_t cons1;
+	pthread_t cons2;
 
-   resp = read(fd[READ],&consumeprod,sizeof(prod));
-   if(resp==-1){        
-       printf("Erro na leitura do pipe\n");
-   }
+	printf("Programa Produtor-Consumidor\n");
 
-   else if(resp==0){
-       printf("Pipe estah vazio... \n");
-   }
-   else{
+	printf("Iniciando variaveis de sincronizacao.\n");
+	pthread_mutex_init(&mutex,NULL);
 
-       consume_prod(&consumeprod);
-   }
-}
-close (fd[READ]); /* Fecha o lado utilizado*/
+        printf("Disparando threads produtores\n");
+	pthread_create(&prod1, NULL, (void*) produtor,1);
+	pthread_create(&prod2, NULL, (void*) produtor,2);
+	pthread_create(&prod3, NULL, (void*) produtor,3);
 
-}
+        printf("Disparando threads consumidores\n");
+	pthread_create(&cons1, NULL, (void*) consumidor,1);
+	pthread_create(&cons2, NULL, (void*) consumidor,2);
 
-prod produce_prod(int n){
-prod newprod;
-int timetoproduce;
-
-timetoproduce = rand()%7;
-newprod.prodid = n;
-
-newprod.producerid = getpid();
-printf("Processo %d produzindo um novo produto\n",getpid());
-
-sleep(timetoproduce);
-return newprod;
-}
-
-void consume_prod(prod * t){
-
-int timetoconsume;
-timetoconsume=rand()%5;
-printf("Processo %d consumindo produto %d do Produtor %d\n",getpid(),t->prodid,t->producerid);
-
-sleep(timetoconsume);
-}
-
-void new_producer(){
-int newprocess;
-
-newprocess = fork();
-if(newprocess==-1){
-   printf("Erro na criacao do processo produtor\n");
-}
-
-else if(newprocess==0){
-   producer();
-   exit(0);
-}
-
-return;
-}
-void new_consumer(){
-int newprocess;
-newprocess = fork();
-
-if(newprocess==-1){
-   printf("Erro na criacao do processo consumidor\n");
-}
-else{
-
-   consumer();
-   exit(0);
-}
-
-}
-
-int main(){
-
-pipe(fd); //cria o pipe
-
-int i;
-
-/* Criação de Processos Produtores */
-for( i=0;i<PRODUCERS;i++){
-
-   new_producer(); 
-}
-/* Criação de Processos consumidores */
-for(i=0;i<CONSUMERS;i++){
-
-   new_consumer();
-}
-//o processo pai será um processo consumidor
-  
-exit(0);
+	pthread_join(prod1,NULL);
+	pthread_join(prod2,NULL);
+	pthread_join(prod3,NULL);
+	pthread_join(cons1,NULL);
+	pthread_join(cons2,NULL);
+	
+        printf("Terminado processo Produtor-Consumidor.\n\n");
 }
