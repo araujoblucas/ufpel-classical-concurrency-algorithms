@@ -2,117 +2,91 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 )
 
-type Ingredient int
+type Ingrediente int
 
 const (
-	Tabaco Ingredient = iota
+	Tabaco Ingrediente = iota
 	Papel
 	Fosforo
 )
 
-var ingredientNames = []string{"Tabaco", "Papel", "Fósforo"}
-
-const ROUNDS = 5
-
-type Mesa struct {
-	mutex            sync.Mutex
-	cond             *sync.Cond
-	ingredientes     [3]bool
-	disponivel       bool
-	rodadasRestantes int
-	rodadasAcabaram  bool
-}
-
-func NewMesa() *Mesa {
-	m := &Mesa{rodadasRestantes: ROUNDS}
-	m.cond = sync.NewCond(&m.mutex)
-	return m
-}
-
-func (m *Mesa) colocarIngredientes() {
-	rand.Seed(time.Now().UnixNano())
-	for i := 0; i < ROUNDS; i++ {
-		m.mutex.Lock()
-		for m.disponivel {
-			m.cond.Wait()
-		}
-
-		// Escolhe dois ingredientes aleatórios
-		ing1 := rand.Intn(3)
-		ing2 := (ing1 + 1 + rand.Intn(2)) % 3
-
-		m.ingredientes[ing1] = true
-		m.ingredientes[ing2] = true
-		m.disponivel = true
-
-		fmt.Printf("Peter colocou %s e %s na mesa. (Rodada %d)\n",
-			ingredientNames[ing1], ingredientNames[ing2], i+1)
-
-		m.cond.Broadcast()
-		m.mutex.Unlock()
-		time.Sleep(time.Second)
-	}
-
-	// Marca que o jogo acabou e acorda todos os fumantes
-	m.mutex.Lock()
-	m.rodadasAcabaram = true
-	m.cond.Broadcast()
-	m.mutex.Unlock()
-}
-
-func (m *Mesa) fumante(id int, meuIngrediente Ingredient, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for {
-		m.mutex.Lock()
-		for !m.disponivel || m.ingredientes[meuIngrediente] {
-			if m.rodadasAcabaram {
-				m.mutex.Unlock()
-				return
-			}
-			m.cond.Wait()
-		}
-
-		if !m.ingredientes[meuIngrediente] {
-			fmt.Printf("Fumante %d (que tem %s) pegou %s e %s e está fumando.\n",
-				id, ingredientNames[meuIngrediente], ingredientNames[(meuIngrediente+1)%3], ingredientNames[(meuIngrediente+2)%3])
-
-			m.ingredientes[(meuIngrediente+1)%3] = false
-			m.ingredientes[(meuIngrediente+2)%3] = false
-			m.disponivel = false
-			m.cond.Broadcast()
-			m.mutex.Unlock()
-
-			time.Sleep(time.Duration(rand.Intn(3)+1) * time.Second)
-			fmt.Printf("Fumante %d terminou de fumar.\n", id)
-		} else {
-			m.mutex.Unlock()
-		}
-	}
-}
-
 func main() {
-	mesa := NewMesa()
+	tabacoCh := make(chan struct{ ing1, ing2 Ingrediente })
+	papelCh := make(chan struct{ ing1, ing2 Ingrediente })
+	fosforoCh := make(chan struct{ ing1, ing2 Ingrediente })
+	encerraCh := make(chan struct{}, 3) // buffer para evitar bloqueio
+
+	maxCigarros := 3
 	var wg sync.WaitGroup
 
-	wg.Add(4)
-
+	// Agente NÃO participa do WaitGroup
 	go func() {
-		defer wg.Done()
-		mesa.colocarIngredientes()
+		ingredientes := []struct{ ing1, ing2 Ingrediente }{
+			{Tabaco, Papel},
+			{Tabaco, Fosforo},
+			{Papel, Fosforo},
+		}
+		fumantesTerminados := 0
+
+	loopAgente:
+		for {
+			select {
+			case <-encerraCh:
+				fumantesTerminados++
+				if fumantesTerminados == 3 {
+					fmt.Println("Todos os fumantes terminaram. Agente encerrando.")
+					break loopAgente
+				}
+			default:
+				for _, par := range ingredientes {
+					fmt.Println("Agente colocou na mesa:", par)
+					switch par {
+					case struct{ ing1, ing2 Ingrediente }{Tabaco, Papel}:
+						fosforoCh <- par
+					case struct{ ing1, ing2 Ingrediente }{Tabaco, Fosforo}:
+						papelCh <- par
+					case struct{ ing1, ing2 Ingrediente }{Papel, Fosforo}:
+						tabacoCh <- par
+					}
+					time.Sleep(time.Second)
+				}
+			}
+		}
+
+		// Fecha canais após fim do loop
+		close(tabacoCh)
+		close(papelCh)
+		close(fosforoCh)
 	}()
 
-	for i, ing := range []Ingredient{Tabaco, Papel, Fosforo} {
-		go func(id int, ing Ingredient) {
-			mesa.fumante(id, ing, &wg)
-		}(i+1, ing)
+	// Função fumante corrigida com canal fechado
+	fumante := func(nome string, meuIngrediente Ingrediente, ingredienteCh chan struct{ ing1, ing2 Ingrediente }) {
+		defer wg.Done()
+		cigarrosFumados := 0
+
+		for cigarrosFumados < maxCigarros {
+			par, ok := <-ingredienteCh
+			if !ok { // Canal fechado pelo agente
+				break
+			}
+			if par.ing1 != meuIngrediente && par.ing2 != meuIngrediente {
+				cigarrosFumados++
+				fmt.Printf("%s está fumando (%d de %d cigarros)!\n", nome, cigarrosFumados, maxCigarros)
+				time.Sleep(2 * time.Second)
+			}
+		}
+		fmt.Println(nome, "terminou de fumar!")
+		encerraCh <- struct{}{}
 	}
 
+	wg.Add(3)
+	go fumante("Fumante 1", Fosforo, fosforoCh)
+	go fumante("Fumante 2", Papel, papelCh)
+	go fumante("Fumante 3", Tabaco, tabacoCh)
+
 	wg.Wait()
-	fmt.Println("Simulação concluída após 5 rodadas.")
 }
