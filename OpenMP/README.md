@@ -60,29 +60,3 @@ If you find this repository useful for your research or teaching, please cite th
 ## About the name
 
 The name **Yvyrupa Code** refers to the Guarani concept of *Yvyrupa* — the world as a shared, borderless land — symbolizing the coexistence of multiple programming languages within a unified analytical and practical space.
-
-
-## How to contribute
-
-Contributions are welcome!
-
-If you want to improve this repository — by adding new implementations, fixing issues, or enhancing documentation — please follow these steps:
-
-1. **Fork the repository**
-2. **Create a new branch** for your contribution:
-   ```bash
-   git checkout -b your-feature-name
-   ```
-3. **Make your changes** and commit them with a meaningful message.
-4. **Push your branch** to your fork:
-   ```bash
-   git push origin your-feature-name
-   ```
-5. **Open a Pull Request** on the main repository, clearly describing your changes and rationale.
-
-When submitting new implementations, please:
-- Include a short README or comment header explaining the approach.
-- Follow the existing file structure and naming conventions.
-- Prefer idiomatic and efficient use of the language's concurrency model.
-
-Thank you for helping make **Yvyrupa Code** a better resource for the community!
